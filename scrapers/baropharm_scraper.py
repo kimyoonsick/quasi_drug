@@ -12,7 +12,7 @@
 """
 import os
 from .base import BaseEventScraper, BASE_DIR
-from .bot_helper import human_delay, human_scroll, human_mouse_move
+from .bot_helper import human_delay, human_scroll, human_mouse_move, scroll_to_bottom
 
 
 class BaropharmEventScraper(BaseEventScraper):
@@ -32,11 +32,37 @@ class BaropharmEventScraper(BaseEventScraper):
 
     async def login(self):
         """바로팜 이메일 로그인 (community.baropharm.com 서브도메인)"""
+        # 먼저 메인 페이지에서 이미 로그인 되어있는지 확인
+        await self.page.goto(self.BASE_URL, wait_until="domcontentloaded")
+        await human_delay(2, 3)
+
+        # 로그인 여부 체크: 로그아웃 버튼이나 마이페이지 요소가 있으면 로그인 상태
+        is_logged_in = await self.page.evaluate("""() => {
+            const body = document.body.innerText || '';
+            // 로그아웃, 마이페이지, 장바구니 등 로그인 후 보이는 요소 확인
+            if (body.includes('로그아웃') || body.includes('마이페이지')) return true;
+            // 로그인 버튼이 보이면 미로그인 상태
+            const loginBtn = document.querySelector('a[href*="signin"], button:has-text("로그인")');
+            if (loginBtn) return false;
+            return false;
+        }""")
+
+        if is_logged_in:
+            print(f"  [Baropharm] 이미 세션 유지 중 (로그인 건너뜀)")
+            return
+
+        # 로그인 페이지로 이동
         await self.page.goto(self.LOGIN_URL, wait_until="domcontentloaded")
         await human_delay(2, 4)
 
         # 마우스 이동으로 인간적인 행동
         await human_mouse_move(self.page)
+
+        # 로그인 폼이 존재하는지 확인 (비밀번호 필드로 판별)
+        pw_input = await self.page.query_selector('input[type="password"]')
+        if not pw_input:
+            print(f"  [Baropharm] 로그인 폼 없음 (이미 로그인 상태로 추정)")
+            return
 
         # 이메일 입력란 찾기 (여러 셀렉터 시도)
         email_selectors = [
@@ -65,17 +91,6 @@ class BaropharmEventScraper(BaseEventScraper):
             await human_delay(0.5, 1.0)
 
         # 비밀번호 입력
-        pw_selectors = [
-            'input[type="password"]',
-            'input[name="password"]',
-            'input[placeholder*="비밀번호"]',
-        ]
-        pw_input = None
-        for sel in pw_selectors:
-            pw_input = await self.page.query_selector(sel)
-            if pw_input:
-                break
-
         if pw_input:
             await pw_input.click()
             await human_delay(0.2, 0.5)
@@ -113,8 +128,8 @@ class BaropharmEventScraper(BaseEventScraper):
         await self.page.goto(self.EVENT_URL, wait_until="domcontentloaded")
         await human_delay(2, 4)
 
-        # 페이지 로드 후 자연스럽게 스크롤
-        await human_scroll(self.page)
+        # 페이지 끝까지 스크롤하여 모든 이벤트 로드
+        await scroll_to_bottom(self.page)
         await human_delay(1, 2)
 
         results = []

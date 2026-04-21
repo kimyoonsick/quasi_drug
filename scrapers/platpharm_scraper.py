@@ -8,7 +8,7 @@
 """
 import os
 from .base import BaseEventScraper, BASE_DIR
-from .bot_helper import human_delay, human_scroll, human_mouse_move
+from .bot_helper import human_delay, human_scroll, human_mouse_move, scroll_to_bottom
 
 
 class PlatpharmEventScraper(BaseEventScraper):
@@ -28,10 +28,11 @@ class PlatpharmEventScraper(BaseEventScraper):
 
     async def login(self):
         """플랫폼팜 이메일 로그인 (홈페이지 로그인 폼)"""
+        # 먼저 메인 페이지에서 이미 로그인 되어있는지 확인
         await self.page.goto(self.LOGIN_URL, wait_until="domcontentloaded")
-        await human_delay(2, 4)
+        await human_delay(2, 3)
 
-        # 먼저 팝업 닫기 시도
+        # 팝업 닫기 시도
         try:
             popup_close = await self.page.query_selector_all('button.close, [class*="modal"] button, [class*="close"]')
             if popup_close:
@@ -41,6 +42,22 @@ class PlatpharmEventScraper(BaseEventScraper):
                         await human_delay(0.5, 1)
         except Exception:
             pass
+
+        # 로그인 여부 체크: 비밀번호 필드가 있으면 로그인 폼이 보이는 상태 = 미로그인
+        pw_input = await self.page.query_selector('input[type="password"]')
+        if not pw_input:
+            # 비밀번호 필드 없음 → 로그인 되어있거나 이미 다른 페이지
+            # 추가 확인: 마이플랫팜, 장바구니 등 로그인 후 메뉴가 보이는지
+            is_logged_in = await self.page.evaluate("""() => {
+                const body = document.body.innerText || '';
+                if (body.includes('마이플랫팜') || body.includes('장바구니') || body.includes('로그아웃')) return true;
+                // auth/login 페이지로 리다이렉트 되었는지 확인
+                if (window.location.pathname.includes('/auth/login')) return false;
+                return true;
+            }""")
+            if is_logged_in:
+                print(f"  [Platpharm] 이미 세션 유지 중 (로그인 건너뜀)")
+                return
 
         # 이메일 입력란 찾기
         email_selectors = [
@@ -68,10 +85,7 @@ class PlatpharmEventScraper(BaseEventScraper):
             await email_input.fill(self.username)
             await human_delay(0.5, 1.0)
 
-
-
         # 비밀번호 입력
-        pw_input = await self.page.query_selector('input[type="password"]')
         if pw_input:
             await pw_input.click(force=True)
             await human_delay(0.2, 0.5)
@@ -114,7 +128,9 @@ class PlatpharmEventScraper(BaseEventScraper):
         """
         await self.page.goto(self.EVENT_URL, wait_until="domcontentloaded")
         await human_delay(3, 5)
-        await human_scroll(self.page)
+
+        # 페이지 끝까지 스크롤하여 모든 이벤트 로드
+        await scroll_to_bottom(self.page)
         await human_delay(1, 2)
 
         results = []

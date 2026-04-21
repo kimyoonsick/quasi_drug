@@ -189,11 +189,19 @@ def process_all_csvs():
             if partner and partner != "한미":
                 category = "제휴"
 
-            # 바로팜의 경우 혜택 컬럼 데이터를 내용 컬럼으로 이동
+            # 바로팜의 경우 혜택 컬럼 데이터를 내용 컬럼으로 이동 및 분류/제휴사 매핑
             content_val = ""
             if mall == 'baropharm' and benefit:
                 content_val = benefit
                 benefit = ""
+                if "팜올플러스 이벤트" in content_val:
+                    category = "자체"
+                    partner = "팜올플러스"
+                elif "입점업체 이벤트" in content_val or "브랜드관 이벤트" in content_val:
+                    category = "제휴"
+                elif "바로팜 이벤트" in content_val:
+                    if not partner: # 앞에서 결제사 등으로 제휴사가 세팅되지 않았을 때만 자체 처리
+                        category = "자체"
 
             # 시작일, 종료일 기반 1년(365일) 이상 이벤트는 타사 제휴가 아닌 경우 자체 프로모션으로 전환
             if start_date and end_date:

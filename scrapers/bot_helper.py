@@ -83,6 +83,39 @@ async def human_scroll(page: Page, direction: str = "down", amount: int = 0):
         await asyncio.sleep(random.uniform(0.1, 0.3))
 
 
+async def scroll_to_bottom(page: Page, max_scrolls: int = 30, wait_sec: float = 1.5):
+    """페이지 끝까지 반복 스크롤 (lazy-load / infinite scroll 대응)
+
+    모든 이벤트가 DOM에 로드될 때까지 스크롤을 반복합니다.
+    페이지 높이가 더 이상 변하지 않으면 종료합니다.
+    """
+    prev_height = 0
+    stable_count = 0  # 높이가 안 바뀐 연속 횟수
+
+    for i in range(max_scrolls):
+        # 현재 페이지 전체 높이
+        cur_height = await page.evaluate("document.body.scrollHeight")
+
+        if cur_height == prev_height:
+            stable_count += 1
+            if stable_count >= 3:
+                # 3번 연속 높이 변화 없으면 끝에 도달한 것으로 판단
+                break
+        else:
+            stable_count = 0
+
+        prev_height = cur_height
+
+        # 인간처럼 한 화면 분량씩 스크롤
+        scroll_amount = random.randint(600, 1000)
+        await page.mouse.wheel(0, scroll_amount)
+        await asyncio.sleep(random.uniform(wait_sec * 0.8, wait_sec * 1.5))
+
+    # 맨 위로 되돌리기 (데이터 추출 전 DOM 접근 안정화)
+    await page.evaluate("window.scrollTo(0, 0)")
+    await asyncio.sleep(0.5)
+
+
 async def human_mouse_move(page: Page):
     """랜덤 마우스 이동 (인간적 행동)"""
     x = random.randint(100, 1200)

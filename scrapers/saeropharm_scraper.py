@@ -10,7 +10,7 @@
 import os
 import re
 from .base import BaseEventScraper, BASE_DIR
-from .bot_helper import human_delay, human_scroll, human_mouse_move
+from .bot_helper import human_delay, human_scroll, human_mouse_move, scroll_to_bottom
 
 
 class SaeropharmEventScraper(BaseEventScraper):
@@ -91,7 +91,9 @@ class SaeropharmEventScraper(BaseEventScraper):
         """
         await self.page.goto(self.EVENT_URL, wait_until="domcontentloaded")
         await human_delay(2, 4)
-        await human_scroll(self.page)
+
+        # 페이지 끝까지 스크롤하여 모든 이벤트 로드
+        await scroll_to_bottom(self.page)
 
         # ── 1단계: 이벤트 목록 메타데이터 수집 (정확한 셀렉터) ──
         events_meta = await self.page.evaluate("""() => {

@@ -184,6 +184,30 @@ def process_all_csvs():
             elif mall == 'platpharm' and "플랫팜" in title:
                 category = "자체"
 
+            # 제휴사가 분명히 파악된 경우 (ex: 신용카드사, 결제사 등), 자체를 덮어쓰고 '제휴'로 확정 
+            # (단, hmp-한미는 자사몰 성격이므로 예외 유지)
+            if partner and partner != "한미":
+                category = "제휴"
+
+            # 바로팜의 경우 혜택 컬럼 데이터를 내용 컬럼으로 이동
+            content_val = ""
+            if mall == 'baropharm' and benefit:
+                content_val = benefit
+                benefit = ""
+
+            # 시작일, 종료일 기반 1년(365일) 이상 이벤트는 타사 제휴가 아닌 경우 자체 프로모션으로 전환
+            if start_date and end_date:
+                try:
+                    s_val = start_date.strip().replace('. ', '-').replace('.', '-')
+                    e_val = end_date.strip().replace('. ', '-').replace('.', '-')
+                    s_date = datetime.strptime(s_val[:10], "%Y-%m-%d")
+                    e_date = datetime.strptime(e_val[:10], "%Y-%m-%d")
+                    if (e_date - s_date).days > 365:
+                        if not partner or partner == "한미":
+                            category = "자체"
+                except Exception:
+                    pass
+
             processed_row = {
                 "분류": category,  # 임시로 빈 분류 넣음
                 "일반/특별": "일반",            # 사용자가 수동 수정하기 전까지 일반으로 고정
@@ -191,7 +215,7 @@ def process_all_csvs():
                 "프로모션명": title.strip(),
                 "시작일": start_date,
                 "종료일": end_date,
-                "내용": "",                    # Image Vision 전까지 비워둠
+                "내용": content_val,                    # 바로팜 제외하고 Image Vision 전까지 비워둠
                 "카테고리": item_category,                # Image Vision 전까지 비워둠
                 "혜택": benefit,               # 기존에 스크래퍼가 가져온 텍스트가 있다면 일단 넣음
                 "Thumbnail": thumbnail,

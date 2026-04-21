@@ -12,7 +12,7 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 
 TARGET_HEADERS = [
     "분류", "일반/특별", "제휴사", "프로모션명", "시작일", "종료일",
-    "내용", "카테고리", "혜택", "Thumbnail", "Detail"
+    "내용", "혜택", "카테고리", "Thumbnail", "Detail"
 ]
 
 def process_all_csvs():
@@ -93,6 +93,9 @@ def process_all_csvs():
                 if name in title:
                     # '위고'가 제품명인 '위고비' 안에서 매칭되는 오탐 방지
                     if name == "위고" and "위고비" in title:
+                        continue
+                    # '상시'가 제휴사로 오인되는 오탐 방지
+                    if name == "상시":
                         continue
                     category = "제휴"
                     partner = name
@@ -189,6 +192,11 @@ def process_all_csvs():
             if partner and partner != "한미":
                 category = "제휴"
 
+            # 필렌즈 관련 타이틀인지 체크 (바로팜 전용 앱)
+            if mall == 'baropharm' and "필렌즈" in title:
+                category = "자체"
+                partner = "필렌즈"
+
             # 바로팜의 경우 혜택 컬럼 데이터를 내용 컬럼으로 이동 및 분류/제휴사 매핑
             content_val = ""
             if mall == 'baropharm' and benefit:
@@ -200,8 +208,7 @@ def process_all_csvs():
                 elif "입점업체 이벤트" in content_val or "브랜드관 이벤트" in content_val:
                     category = "제휴"
                 elif "바로팜 이벤트" in content_val:
-                    if not partner: # 앞에서 결제사 등으로 제휴사가 세팅되지 않았을 때만 자체 처리
-                        category = "자체"
+                    category = "자체"
 
             # 시작일, 종료일 기반 1년(365일) 이상 이벤트는 타사 제휴가 아닌 경우 자체 프로모션으로 전환
             if start_date and end_date:
@@ -224,20 +231,42 @@ def process_all_csvs():
                 "시작일": start_date,
                 "종료일": end_date,
                 "내용": content_val,                    # 바로팜 제외하고 Image Vision 전까지 비워둠
-                "카테고리": item_category,                # Image Vision 전까지 비워둠
                 "혜택": benefit,               # 기존에 스크래퍼가 가져온 텍스트가 있다면 일단 넣음
+                "카테고리": item_category,                # Image Vision 전까지 비워둠
                 "Thumbnail": thumbnail,
                 "Detail": detail
             }
-            mall_data.append(processed_row)
+            
+            # 수집 대상 월(current_time 기준) 1일보다 이전에 종료된 과거 이벤트 스킵
+            valid_event = True
+            if end_date:
+                try:
+                    e_val = end_date.strip().replace('. ', '-').replace('.', '-')
+                    e_date_check = datetime.strptime(e_val[:10], "%Y-%m-%d")
+                    curr_y = int("20" + current_time[:2])
+                    curr_m = int(current_time[2:4])
+                    first_day_of_month = datetime(curr_y, curr_m, 1)
+                    if e_date_check < first_day_of_month:
+                        valid_event = False
+                    elif e_date_check.year >= 2100:
+                        valid_event = False
+                except Exception:
+                    pass
+            
+            if valid_event:
+                mall_data.append(processed_row)
             
         # 개별 몰별 CSV 저장
         if mall_data:
             final_df = pd.DataFrame(mall_data, columns=TARGET_HEADERS)
             
-            # 정렬 로직: 분류가 '자체'인 것 최상단, 그다음 기간(종료일-시작일)이 짧은 순
+            # 정렬 로직: 분류가 '자체'인 것 최상단 (팜올플러스는 그 아래), 그다음 기간이 짧은 순
             def get_sort_keys(row):
-                is_own = 0 if row.get('분류') == '자체' else 1
+                if row.get('분류') == '자체':
+                    is_own = 1 if row.get('제휴사') in ['팜올플러스', '필렌즈'] else 0
+                else:
+                    is_own = 2
+                
                 duration_days = 999999
                 try:
                     s_val, e_val = str(row.get('시작일', '')).strip().replace('.', '-'), str(row.get('종료일', '')).strip().replace('.', '-')

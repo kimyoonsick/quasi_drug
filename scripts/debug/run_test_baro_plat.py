@@ -1,5 +1,7 @@
 """바로팜 + 플랫팜만 테스트 실행"""
 import asyncio
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from scrapers.baropharm_scraper import BaropharmEventScraper
 from scrapers.platpharm_scraper import PlatpharmEventScraper
 from process_csv import process_all_csvs

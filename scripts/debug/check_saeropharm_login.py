@@ -1,5 +1,9 @@
 import asyncio
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from scrapers.saeropharm_scraper import SaeropharmEventScraper
+
+DEBUG_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'debug')
 
 async def check():
     s = SaeropharmEventScraper()
@@ -7,7 +11,7 @@ async def check():
     
     print("페이지 이동...")
     await s.page.goto(s.LOGIN_URL, wait_until="domcontentloaded")
-    await s.page.screenshot(path="saeropharm_login_1_init.png", full_page=True)
+    await s.page.screenshot(path=os.path.join(DEBUG_DIR, "saeropharm_login_1_init.png"), full_page=True)
     
     from scrapers.bot_helper import human_delay, human_mouse_move
     await human_delay(1, 2)
@@ -26,7 +30,7 @@ async def check():
         await pw_input.fill(s.password)
         await human_delay(0.5, 1.0)
         
-    await s.page.screenshot(path="saeropharm_login_2_filled.png", full_page=True)
+    await s.page.screenshot(path=os.path.join(DEBUG_DIR, "saeropharm_login_2_filled.png"), full_page=True)
     
     # 버튼 찾기 및 클릭
     login_btn = await s.page.query_selector('a:has-text("입장")')
@@ -40,7 +44,7 @@ async def check():
     await s.page.wait_for_load_state("networkidle")
     await human_delay(2, 4)
     
-    await s.page.screenshot(path="saeropharm_login_3_result.png", full_page=True)
+    await s.page.screenshot(path=os.path.join(DEBUG_DIR, "saeropharm_login_3_result.png"), full_page=True)
     
     print("현재 URL:", s.page.url)
     

@@ -1,4 +1,6 @@
 import asyncio
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from scrapers.saeropharm_scraper import SaeropharmEventScraper
 
 async def check():
@@ -14,7 +16,7 @@ async def check():
     await human_delay(1,2)
     
     html = await s.page.content()
-    with open("saeropharm_event_page.html", "w", encoding="utf-8") as f:
+    with open(os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'debug', 'saeropharm_event_page.html'), "w", encoding="utf-8") as f:
         f.write(html)
     
     print("DOM 저장 완료")

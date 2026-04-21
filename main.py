@@ -50,7 +50,7 @@ async def run_all(headless: bool = False):
     if all_events:
         df = pd.DataFrame(all_events)
         timestamp = datetime.now().strftime('%y%m%d_%H%M')
-        output_path = BASE_DIR / f"competitor_raw.csv"
+        output_path = BASE_DIR / "data" / f"competitor_raw.csv"
         df.to_csv(output_path, index=False, encoding="utf-8-sig")
         print(f"\n📁 통합 저장: {output_path} (총 {len(df)}건)")
 

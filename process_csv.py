@@ -53,7 +53,8 @@ def process_all_csvs():
             
         mall_data = []
         # 이번에는 가장 최근에 생성된 csv 파일 하나만 가져옵니다 (최신 스크래핑 결과)
-        csv_files = glob.glob(os.path.join(mall_dir, "*.csv"))
+        csv_files = [f for f in glob.glob(os.path.join(mall_dir, "*.csv"))
+                     if '_override' not in os.path.basename(f) and '2604_' not in os.path.basename(f)]
         if not csv_files:
             continue
             
@@ -89,7 +90,7 @@ def process_all_csvs():
             if detail_url == 'nan': detail_url = ''
 
             # 새 헤더 규격에 맞게 맵핑
-            category = "미분류"
+            category = ""
             partner = ""
             for name in partner_names_sorted:
                 if name in title:
@@ -199,6 +200,10 @@ def process_all_csvs():
                 category = "자체"
                 partner = "필렌즈"
 
+            # 프로모션명에 '외품' 포함 시 제휴로 분류
+            if "외품" in title:
+                category = "제휴"
+
             # 바로팜의 경우 혜택 컬럼 데이터를 내용 컬럼으로 이동 및 분류/제휴사 매핑
             content_val = ""
             if mall == 'baropharm' and benefit:
@@ -207,7 +212,25 @@ def process_all_csvs():
                 if "팜올플러스 이벤트" in content_val:
                     category = "자체"
                     partner = "팜올플러스"
-                elif "입점업체 이벤트" in content_val or "브랜드관 이벤트" in content_val:
+                elif "입점업체 이벤트" in content_val:
+                    category = "제휴"
+                    # [입점업체명] 형식에서 추출
+                    bracket_match = re.match(r'^\[(.+?)\]', title)
+                    if bracket_match:
+                        partner = bracket_match.group(1).strip()
+                    elif not partner:
+                        # 브래킷 없으면 DB seller 이름으로 재시도
+                        for name in partner_names_sorted:
+                            if name in title:
+                                partner = name
+                                break
+                    if not partner:
+                        # 이모지 등 특수문자 제거 후 첫 공백/특수문자 전 단어 추출
+                        clean_title = re.sub(r'[^\w가-힣a-zA-Z0-9\s\[\]]', '', title).strip()
+                        first_word = clean_title.split()[0] if clean_title.split() else ''
+                        if first_word and len(first_word) >= 2:
+                            partner = first_word
+                elif "브랜드관 이벤트" in content_val:
                     category = "제휴"
                 elif "바로팜 이벤트" in content_val:
                     category = "자체"
@@ -299,6 +322,16 @@ def process_all_csvs():
         return
 
     print(f"\n[SUCCESS] Processing Complete! Total {total_processed_count} events processed across various malls.")
+
+    # 수기 편집 오버라이드 자동 적용
+    try:
+        from scripts.merge_overrides import main as merge_main
+        print(f"\n{'='*50}")
+        print("🔄 수기 편집 오버라이드 적용")
+        print(f"{'='*50}")
+        merge_main()
+    except Exception as e:
+        print(f"[WARN] 오버라이드 병합 실패: {e}")
 
 if __name__ == "__main__":
     process_all_csvs()

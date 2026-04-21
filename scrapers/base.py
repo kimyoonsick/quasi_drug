@@ -61,7 +61,7 @@ class BaseEventScraper(ABC):
         }
 
         # 이전에 저장된 세션(쿠키 등)이 있다면 불러오기
-        state_path = BASE_DIR / f"{self.name}_state.json"
+        state_path = BASE_DIR / ".cookies" / f"{self.name}_state.json"
         if state_path.exists():
             context_args["storage_state"] = str(state_path)
 
@@ -75,7 +75,7 @@ class BaseEventScraper(ABC):
         # 현재 컨텍스트의 상태(쿠키, 스토리지)를 저장하여 로그인 유지
         if self.context:
             try:
-                state_path = BASE_DIR / f"{self.name}_state.json"
+                state_path = BASE_DIR / ".cookies" / f"{self.name}_state.json"
                 await self.context.storage_state(path=str(state_path))
             except Exception as e:
                 print(f"[base] 세션 저장 중 오류: {e}")

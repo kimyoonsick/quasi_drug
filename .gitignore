@@ -2,7 +2,9 @@
 .env
 .venv
 .vscode
+.cookies/
 __pycache__
 *.pyc
 *.pyo
 *.pyd
+data/debug/

@@ -24,7 +24,7 @@ from scrapers.saeropharm_scraper import SaeropharmScraper
 from scrapers.platpharm_scraper import PlatpharmScraper
 
 # Output CSV path
-OUTPUT = Path("competitor_raw.csv")
+OUTPUT = Path(__file__).resolve().parent.parent / "data" / "competitor_raw.csv"
 
 # ---------------------------------------------------------------------------
 # Helper: map raw scraper dict to the user‑defined header structure

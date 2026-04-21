@@ -1,0 +1,239 @@
+# scrapers/baropharm_scraper.py
+"""바로팜 (baropharm.com) 이벤트 스크래퍼
+
+⚠️ 바로팜은 상당한 IT 기업으로, 봇 탐지가 엄격합니다.
+- 긴 딜레이 (10~20초)
+- 리소스 차단 최소화
+- 자연스러운 브라우징 패턴 유지
+
+로그인: community.baropharm.com/signin (이메일 로그인)
+환경변수: email_id, pw
+이벤트: /events 페이지
+"""
+import os
+from .base import BaseEventScraper, BASE_DIR
+from .bot_helper import human_delay, human_scroll, human_mouse_move
+
+
+class BaropharmEventScraper(BaseEventScraper):
+    name = "baropharm"
+    # 바로팜은 IT 기업이므로 딜레이를 더 길게
+    delay_min = 10.0
+    delay_max = 20.0
+
+    LOGIN_URL = "https://community.baropharm.com/signin?from=https://www.baropharm.com/"
+    EVENT_URL = "https://www.baropharm.com/events"
+    BASE_URL = "https://www.baropharm.com"
+
+    def __init__(self):
+        super().__init__()
+        self.username = os.getenv("email_id")
+        self.password = os.getenv("pw")
+
+    async def login(self):
+        """바로팜 이메일 로그인 (community.baropharm.com 서브도메인)"""
+        await self.page.goto(self.LOGIN_URL, wait_until="domcontentloaded")
+        await human_delay(2, 4)
+
+        # 마우스 이동으로 인간적인 행동
+        await human_mouse_move(self.page)
+
+        # 이메일 입력란 찾기 (여러 셀렉터 시도)
+        email_selectors = [
+            'input[type="email"]',
+            'input[name="email"]',
+            'input[placeholder*="이메일"]',
+            'input[placeholder*="아이디"]',
+            'input[autocomplete="email"]',
+        ]
+        email_input = None
+        for sel in email_selectors:
+            email_input = await self.page.query_selector(sel)
+            if email_input:
+                break
+
+        if not email_input:
+            # 폴백: 첫 번째 텍스트/이메일 입력란
+            inputs = await self.page.query_selector_all('input[type="text"], input[type="email"]')
+            if inputs:
+                email_input = inputs[0]
+
+        if email_input:
+            await email_input.click()
+            await human_delay(0.2, 0.5)
+            await email_input.fill(self.username)
+            await human_delay(0.5, 1.0)
+
+        # 비밀번호 입력
+        pw_selectors = [
+            'input[type="password"]',
+            'input[name="password"]',
+            'input[placeholder*="비밀번호"]',
+        ]
+        pw_input = None
+        for sel in pw_selectors:
+            pw_input = await self.page.query_selector(sel)
+            if pw_input:
+                break
+
+        if pw_input:
+            await pw_input.click()
+            await human_delay(0.2, 0.5)
+            await pw_input.fill(self.password)
+            await human_delay(0.5, 1.5)
+
+        # 로그인 버튼 클릭
+        login_selectors = [
+            'button:has-text("로그인")',
+            'button[type="submit"]',
+            'a:has-text("로그인")',
+            'input[type="submit"]',
+        ]
+        for sel in login_selectors:
+            btn = await self.page.query_selector(sel)
+            if btn:
+                await human_delay(0.3, 0.8)
+                await btn.click()
+                break
+
+        await self.page.wait_for_load_state("networkidle")
+        await human_delay(3, 5)
+
+    async def extract_events(self) -> list[dict]:
+        """바로팜 이벤트 목록 수집
+
+        ⚠️ 최대한 자연스럽게 탐색 - 급하게 데이터를 긁지 않음
+        """
+        # 자연스럽게 메인 페이지에서 잠시 머무른 후 이벤트 페이지로 이동
+        print("  [Baropharm] 메인 페이지 탐색...")
+        await human_scroll(self.page)
+        await self._delay(2, 4)
+
+        print(f"  [Baropharm] 이벤트 페이지 이동: {self.EVENT_URL}")
+        await self.page.goto(self.EVENT_URL, wait_until="domcontentloaded")
+        await human_delay(2, 4)
+
+        # 페이지 로드 후 자연스럽게 스크롤
+        await human_scroll(self.page)
+        await human_delay(1, 2)
+
+        results = []
+
+        # 이벤트 데이터 추출
+        events_data = await self.page.evaluate("""() => {
+            const events = [];
+
+            // 이벤트 카드/목록 아이템 찾기
+            const selectors = [
+                'a[href*="/events/"]',
+                '[class*="event"] a',
+                '.event-card', '.event-item',
+                'article', '.card',
+                '[class*="EventCard"]', '[class*="event-card"]',
+            ];
+
+            let items = [];
+            for (const sel of selectors) {
+                const found = document.querySelectorAll(sel);
+                if (found.length > 0) {
+                    items = found;
+                    break;
+                }
+            }
+
+            for (const item of items) {
+                const img = item.querySelector('img');
+                const link = item.closest('a') || item.querySelector('a');
+
+                let title = '';
+                // 제목 요소 찾기
+                const titleEl = item.querySelector('h2, h3, h4, strong, .title, [class*="title"]');
+                if (titleEl) title = titleEl.textContent.trim();
+                if (!title && img) title = img.alt || '';
+                if (!title) title = item.textContent.trim().substring(0, 100);
+
+                let imgSrc = '';
+                if (img) imgSrc = img.src || img.dataset.src || '';
+
+                let detailUrl = '';
+                if (link) detailUrl = link.href || '';
+
+                let duration = '';
+                const dateEl = item.querySelector('[class*="date"], [class*="period"], time, .duration');
+                if (dateEl) duration = dateEl.textContent.trim();
+
+                let benefit = '';
+                const benefitEl = item.querySelector('[class*="benefit"], [class*="desc"], p');
+                if (benefitEl) benefit = benefitEl.textContent.trim();
+
+                if (title || imgSrc) {
+                    events.push({
+                        title, img_src: imgSrc, detail_url: detailUrl,
+                        duration, benefit,
+                        text: item.textContent.trim().substring(0, 200)
+                    });
+                }
+            }
+            return events;
+        }""")
+        
+        print(f"  [Baropharm] 감지된 이벤트 수: {len(events_data)}")
+
+        for ev in events_data:
+            event = {
+                "mall_name": "Baropharm",
+                "event_title": ev.get("title", "").strip(),
+                "duration": ev.get("duration", "").strip(),
+                "benefit_summary": ev.get("benefit", "").strip(),
+                "detail_url": ev.get("detail_url", ""),
+                "thumbnail_url": ev.get("img_src", ""),
+                "target": "",
+            }
+            results.append(event)
+
+            if ev.get("img_src"):
+                await self.download_event_images(event, [ev["img_src"]])
+
+        # 상세 페이지 접근은 바로팜의 봇 탐지를 고려하여 최대 3개만
+        for i, ev in enumerate(events_data[:3]):
+            detail_url = ev.get("detail_url", "")
+            if detail_url and detail_url.startswith("http"):
+                try:
+                    await self._delay(8, 15)  # 긴 딜레이
+                    await human_mouse_move(self.page)
+                    await self.page.goto(detail_url, wait_until="domcontentloaded")
+                    await human_delay(3, 5)
+                    await human_scroll(self.page)
+
+                    # 상세 페이지 이미지 수집
+                    detail_images = await self.page.evaluate("""() => {
+                        const imgs = Array.from(document.querySelectorAll('img'));
+                        return imgs.map(i => i.src)
+                            .filter(src => src && !src.includes('icon') && !src.includes('logo')
+                                    && !src.includes('avatar') && src.includes('static'));
+                    }""")
+
+                    if detail_images:
+                        paths = await self.download_event_images(results[i], detail_images[:5])
+                        results[i]["detail_images"] = "|".join(paths)
+                        print(f"    → 이미지 {len(paths)}장 다운로드")
+
+                except Exception as e:
+                    print(f"  [Baropharm] 상세 페이지 조심스럽게 스킵: {e}")
+                finally:
+                    # 복귀
+                    if "/events/" in self.page.url:
+                        try:
+                            await self.page.go_back(wait_until="domcontentloaded")
+                        except Exception:
+                            await self.page.goto(self.EVENT_URL, wait_until="domcontentloaded")
+                        await human_delay(2, 4)
+
+        return results
+
+
+if __name__ == "__main__":
+    import asyncio
+    scraper = BaropharmEventScraper()
+    data = asyncio.run(scraper.run())
+    print(f"수집 완료: {len(data)}건")

@@ -12,7 +12,7 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 
 TARGET_HEADERS = [
     "분류", "일반/특별", "제휴사", "프로모션명", "시작일", "종료일",
-    "내용", "혜택", "카테고리", "Thumbnail", "Detail"
+    "내용", "혜택", "카테고리", "Thumbnail", "Detail", "URL"
 ]
 
 def process_all_csvs():
@@ -77,6 +77,7 @@ def process_all_csvs():
             benefit = str(row.get('benefit_summary', ''))
             thumbnail = str(row.get('thumbnail_url', ''))
             detail = str(row.get('detail_images', ''))
+            detail_url = str(row.get('detail_url', ''))
             
             # 'nan' 문자열 처리
             if title == 'nan': title = ''
@@ -85,6 +86,7 @@ def process_all_csvs():
             if benefit == 'nan': benefit = ''
             if thumbnail == 'nan': thumbnail = ''
             if detail == 'nan': detail = ''
+            if detail_url == 'nan': detail_url = ''
 
             # 새 헤더 규격에 맞게 맵핑
             category = "미분류"
@@ -234,7 +236,8 @@ def process_all_csvs():
                 "혜택": benefit,               # 기존에 스크래퍼가 가져온 텍스트가 있다면 일단 넣음
                 "카테고리": item_category,                # Image Vision 전까지 비워둠
                 "Thumbnail": thumbnail,
-                "Detail": detail
+                "Detail": detail,
+                "URL": detail_url
             }
             
             # 수집 대상 월(current_time 기준) 1일보다 이전에 종료된 과거 이벤트 스킵

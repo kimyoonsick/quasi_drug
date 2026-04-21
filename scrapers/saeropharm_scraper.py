@@ -201,9 +201,11 @@ class SaeropharmEventScraper(BaseEventScraper):
 
                     await self.page.goto(detail_url, wait_until="domcontentloaded")
                     await human_delay(2, 4)
-                    await human_scroll(self.page)
 
-                    # 상세 페이지 이미지 수집
+                    # 상세 페이지 끝까지 스크롤 (lazy-load 이미지 로드)
+                    await scroll_to_bottom(self.page, max_scrolls=10, wait_sec=1.0)
+
+                    # 상세 페이지 이미지 수집 (넓은 필터)
                     detail_images = await self.page.evaluate("""() => {
                         const baseUrl = 'https://www.saeropharm.com';
                         const imgs = Array.from(document.querySelectorAll('img'));
@@ -221,7 +223,12 @@ class SaeropharmEventScraper(BaseEventScraper):
                                 !src.includes('/bg_') &&
                                 !src.includes('/common/') &&
                                 !src.includes('ico_') &&
-                                (src.includes('/upload') || src.includes('/event') || src.includes('/img/'))
+                                !src.includes('loading') &&
+                                !src.includes('blank.') &&
+                                src.includes('http') &&
+                                (src.includes('/upload') || src.includes('/event') ||
+                                 src.includes('/img/') || src.includes('/image') ||
+                                 src.includes('/content') || src.includes('/data/'))
                             );
                     }""")
 
@@ -229,6 +236,8 @@ class SaeropharmEventScraper(BaseEventScraper):
                         paths = await self.download_event_images(event, detail_images[:10])
                         event["detail_images"] = "|".join(paths)
                         print(f"    → 이미지 {len(paths)}장 다운로드")
+                    else:
+                        print(f"    → 상세 이미지 없음")
 
                     # 혜택 정보 추출
                     benefit_text = await self.page.evaluate("""() => {

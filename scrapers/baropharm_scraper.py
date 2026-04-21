@@ -27,8 +27,8 @@ class BaropharmEventScraper(BaseEventScraper):
 
     def __init__(self):
         super().__init__()
-        self.username = os.getenv("email_id")
-        self.password = os.getenv("pw")
+        self.username = os.getenv("baro_id") or os.getenv("email_id")
+        self.password = os.getenv("baro_pw") or os.getenv("pw")
 
     async def login(self):
         """바로팜 이메일 로그인 (community.baropharm.com 서브도메인)"""
@@ -36,14 +36,16 @@ class BaropharmEventScraper(BaseEventScraper):
         await self.page.goto(self.BASE_URL, wait_until="domcontentloaded")
         await human_delay(2, 3)
 
-        # 로그인 여부 체크: 로그아웃 버튼이나 마이페이지 요소가 있으면 로그인 상태
+        # 로그인 여부 체크: 페이지 텍스트에서 로그인 상태 판별
         is_logged_in = await self.page.evaluate("""() => {
             const body = document.body.innerText || '';
-            // 로그아웃, 마이페이지, 장바구니 등 로그인 후 보이는 요소 확인
             if (body.includes('로그아웃') || body.includes('마이페이지')) return true;
-            // 로그인 버튼이 보이면 미로그인 상태
-            const loginBtn = document.querySelector('a[href*="signin"], button:has-text("로그인")');
-            if (loginBtn) return false;
+            // 로그인/가입 링크가 보이면 미로그인
+            const links = document.querySelectorAll('a');
+            for (const a of links) {
+                if (a.href && a.href.includes('signin')) return false;
+                if (a.textContent && a.textContent.trim() === '로그인') return false;
+            }
             return false;
         }""")
 
@@ -209,40 +211,47 @@ class BaropharmEventScraper(BaseEventScraper):
             if ev.get("img_src"):
                 await self.download_event_images(event, [ev["img_src"]])
 
-        # 상세 페이지 접근은 바로팜의 봇 탐지를 고려하여 최대 3개만
-        for i, ev in enumerate(events_data[:3]):
+        # 상세 페이지 접근 - 모든 이벤트 방문
+        for i, ev in enumerate(events_data):
             detail_url = ev.get("detail_url", "")
             if detail_url and detail_url.startswith("http"):
                 try:
-                    await self._delay(8, 15)  # 긴 딜레이
+                    await self._delay(5, 10)
                     await human_mouse_move(self.page)
+                    print(f"  [{i+1}/{len(events_data)}] 상세 방문: {results[i]['event_title'][:30]}")
                     await self.page.goto(detail_url, wait_until="domcontentloaded")
-                    await human_delay(3, 5)
-                    await human_scroll(self.page)
+                    await human_delay(2, 4)
 
-                    # 상세 페이지 이미지 수집
+                    # 상세 페이지 끝까지 스크롤
+                    await scroll_to_bottom(self.page, max_scrolls=10, wait_sec=1.0)
+
+                    # 상세 페이지 이미지 수집 (넓은 필터)
                     detail_images = await self.page.evaluate("""() => {
                         const imgs = Array.from(document.querySelectorAll('img'));
                         return imgs.map(i => i.src)
-                            .filter(src => src && !src.includes('icon') && !src.includes('logo')
-                                    && !src.includes('avatar') && src.includes('static'));
+                            .filter(src => src &&
+                                !src.includes('icon') && !src.includes('logo') &&
+                                !src.includes('avatar') && !src.includes('favicon') &&
+                                !src.includes('/common/') && !src.includes('btn_') &&
+                                !src.includes('loading') && !src.includes('placeholder') &&
+                                (src.includes('http') && (
+                                    src.includes('event') || src.includes('upload') ||
+                                    src.includes('static') || src.includes('promotion') ||
+                                    src.includes('banner') || src.includes('content') ||
+                                    src.includes('img') || src.includes('image')
+                                ))
+                            );
                     }""")
 
                     if detail_images:
                         paths = await self.download_event_images(results[i], detail_images[:5])
                         results[i]["detail_images"] = "|".join(paths)
                         print(f"    → 이미지 {len(paths)}장 다운로드")
+                    else:
+                        print(f"    → 상세 이미지 없음")
 
                 except Exception as e:
-                    print(f"  [Baropharm] 상세 페이지 조심스럽게 스킵: {e}")
-                finally:
-                    # 복귀
-                    if "/events/" in self.page.url:
-                        try:
-                            await self.page.go_back(wait_until="domcontentloaded")
-                        except Exception:
-                            await self.page.goto(self.EVENT_URL, wait_until="domcontentloaded")
-                        await human_delay(2, 4)
+                    print(f"  [Baropharm] 상세 페이지 스킵: {e}")
 
         return results
 

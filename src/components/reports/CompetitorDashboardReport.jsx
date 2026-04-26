@@ -51,22 +51,21 @@ const MATRIX_DATA = [
 ];
 
 const TREND_DATA = [
-    { no: 1, trend: '카드/간편결제 필수화', detail: '3사 이상이 카드·간편결제 제휴 운영, 미운영 시 경쟁력 열위', who: '바로팜·새로팜·플랫팜' },
-    { no: 2, trend: '입점업체 월간 이벤트 표준화', detail: '도매상별 월 1회 사은품 증정이 업계 표준으로 정착', who: '바로팜·HMP몰' },
-    { no: 3, trend: '게이미피케이션 선도', detail: '수집형 미션·룰렛 등 바로팜만 유일하게 운영, 타사 미도입', who: '바로팜' },
-    { no: 4, trend: '라이브커머스 도입', detail: '바로팜이 제약사 협업 라이브 방송 진행, B2B에서도 시도', who: '바로팜' },
-    { no: 5, trend: '기술/학술 기반 차별화', detail: 'AI 헬스체커·심포지엄 등 비가격 경쟁 요소 부상', who: '플랫팜' },
-    { no: 6, trend: '금융 제휴 확장', detail: '약국 전용 대출(메디칼론)·카드 신규발급까지 확장', who: '플랫팜·새로팜' },
-    { no: 7, trend: '커뮤니티 생태계 구축', detail: '약사 지식인·댓글·전문가 상담 등 비거래 활동 유도', who: '바로팜' },
+    { no: 1, trend: '카드/간편결제', detail: '3사 이상이 카드·간편결제 제휴 운영, 미운영 시 경쟁력 열위', who: '바로팜·새로팜·플랫팜' },
+    { no: 2, trend: '입점업체 월간 이벤트', detail: '도매상별 월 1회 사은품 증정', who: '바로팜·HMP몰' },
+    { no: 3, trend: '게이미피케이션 이벤트', detail: '수집형 미션·룰렛 등 바로팜만 유일하게 운영', who: '바로팜' },
+    { no: 4, trend: '라이브커머스 도입', detail: '바로팜이 제약사 협업 라이브 방송 진행(갈더마코리아)', who: '바로팜' },
+    { no: 5, trend: '기술/학술 기반 차별화', detail: 'AI 헬스체커·위고비 학술 심포지엄 등', who: '플랫팜' },
+    { no: 6, trend: '커뮤니티 생태계 구축', detail: '약사 지식인·댓글·전문가 상담 등 비거래 활동 유도', who: '바로팜' },
 ];
 
 const ACTION_DATA = [
-    { priority: '1순위', area: '입점업체 월간 이벤트', level: '바로팜 18건·HMP 24건·새로팜 30건/월', action: '주요 도매상 입점 후 월간 사은품 이벤트 표준 운영 체계 구축' },
-    { priority: '1순위', area: '카드/결제 제휴', level: '3사 이상 평균 3~8건', action: '최소 2개 카드사 + 1개 간편결제 제휴 확보' },
-    { priority: '2순위', area: '구매 연동 쿠폰', level: '새로팜 구간별 쿠폰', action: '구매금액 구간별 쿠폰(10/20/30만원) 도입으로 객단가 상승' },
-    { priority: '2순위', area: '제약사 협업', level: '바로팜 이건뭐약·플랫팜 종근당 시리즈', action: '퀴즈·셀링가이드 작성 등 제약사 공동 프로모션 기획' },
-    { priority: '3순위', area: '게이미피케이션', level: '바로팜만 운영', action: '자사 IP 기반 미션형 이벤트 중장기 로드맵 수립' },
-    { priority: '3순위', area: '커뮤니티 활성화', level: '바로팜만 운영', action: '약사 Q&A·리뷰·댓글 포인트 적립 체계 설계' },
+    { priority: '1', area: '입점업체 월간 이벤트', level: '바로팜 18건·HMP 24건·새로팜 30건/월', action: '이벤트 효과는 미미하여 다른 이벤트에 집중 필요' },
+    { priority: '2', area: '카드/결제 제휴', level: '3~8건이나 특별 제휴는 구분 조사 필요', action: 'BT하나카드 강화 or 로얄블루M카드/피코페이 등 추가 제휴' },
+    { priority: '3', area: '구매 연동 쿠폰', level: '새로팜 구간별 쿠폰', action: '구매금액 구간별 쿠폰(10/20/30만원) 도입으로 객단가 상승 유도' },
+    { priority: '4', area: '제약사 협업', level: '바로팜 이건뭐약·플랫팜 종근당 시리즈', action: '퀴즈·셀링가이드 작성 등 제약사 공동 프로모션 기획' },
+    { priority: '5', area: '게이미피케이션', level: '바로팜만 운영', action: '자사 IP 기반 미션형 이벤트 중장기 로드맵 수립' },
+    { priority: '6', area: '커뮤니티 활성화', level: '바로팜만 운영', action: '약사 Q&A·리뷰·댓글 포인트 적립 체계 설계' },
 ];
 
 /* ═══ 탭 버튼 스타일 ═══ */
@@ -232,7 +231,7 @@ export default function CompetitorDashboardReport({ titleOverride }) {
 
                         {/* 2. 매트릭스 */}
                         <section style={section}>
-                            <h2 style={sTitle}><EditableField id="CDR_sTitle_matrix" fallback="2. 이벤트 유형별 분류 매트릭스" /></h2>
+                            <h2 style={sTitle}><EditableField id="CDR_sTitle_matrix" fallback="2. 이벤트 유형별 분류" /></h2>
                             <table style={tbl}>
                                 <thead>
                                     <tr>
@@ -268,13 +267,13 @@ export default function CompetitorDashboardReport({ titleOverride }) {
 
                         {/* 3. 트렌드 */}
                         <section style={section}>
-                            <h2 style={sTitle}><EditableField id="CDR_sTitle_trend" fallback="3. 트렌드 및 인사이트" /></h2>
-                            <h3 style={subHeading}>트렌드 요약</h3>
+                            <h2 style={sTitle}><EditableField id="CDR_sTitle_trend" fallback="3. 주요 이벤트" /></h2>
+                            <h3 style={subHeading}>요약</h3>
                             <table style={tbl}>
                                 <thead>
                                     <tr>
                                         <th style={{ ...thC, width: '40px' }}>#</th>
-                                        <th style={{ ...thStyle, width: '180px' }}>트렌드</th>
+                                        <th style={{ ...thStyle, width: '180px' }}>이벤트</th>
                                         <th style={thStyle}>상세</th>
                                         <th style={{ ...thStyle, width: '150px' }}>관련 경쟁사</th>
                                     </tr>
@@ -298,7 +297,7 @@ export default function CompetitorDashboardReport({ titleOverride }) {
                             <table style={tbl}>
                                 <thead>
                                     <tr>
-                                        <th style={{ ...thC, width: '80px' }}>우선순위</th>
+                                        <th style={{ ...thC, width: '40px' }}>#</th>
                                         <th style={{ ...thStyle, width: '140px' }}>영역</th>
                                         <th style={thStyle}>현 경쟁사 수준</th>
                                         <th style={thStyle}>피코몰 액션 아이템</th>
@@ -318,9 +317,9 @@ export default function CompetitorDashboardReport({ titleOverride }) {
                                     ))}
                                 </tbody>
                             </table>
-                            <div style={{ ...callout, marginTop: '1rem' }}>
+                            {/* <div style={{ ...callout, marginTop: '1rem' }}>
                                 <strong>차별화 포인트:</strong> 경쟁사 대부분이 도매상 사은품·카드 제휴의 <strong>가격 경쟁</strong>에 집중하는 반면, 피코몰은 <strong>약국 경영에 실질적으로 필요한 실무 혜택</strong>(샘플·실무 도구·포인트)과 <strong>커뮤니티 기반 참여형 이벤트</strong>를 결합하여 체류시간과 재구매율을 동시에 높이는 방향으로 설계해야 합니다.
-                            </div>
+                            </div> */}
                         </section>
 
                         {/* 출처 */}

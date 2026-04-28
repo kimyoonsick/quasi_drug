@@ -12,10 +12,10 @@ const ReportLayout = ({ children, type, title, subtitle, date, version, audience
     }}>
       <header style={{ marginBottom: '3rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <span style={{ 
-            backgroundColor: '#0a2342', 
-            color: '#fff', 
-            padding: '0.25rem 0.75rem', 
+          <span style={{
+            backgroundColor: '#0a2342',
+            color: '#fff',
+            padding: '0.25rem 0.75rem',
             borderRadius: '4px',
             fontSize: '0.75rem',
             fontWeight: 'bold'
@@ -31,7 +31,7 @@ const ReportLayout = ({ children, type, title, subtitle, date, version, audience
         {children}
       </main>
       <footer style={{ marginTop: '4rem', textAlign: 'center', color: '#adb5bd', fontSize: '0.875rem' }}>
-        © 2026 Picofriends. All rights reserved.
+        © 2026 Picoinnovation. All rights reserved.
       </footer>
     </div>
   );

@@ -7,8 +7,10 @@
 이벤트 상세: /pharmacy/events?eventId={ID}
 """
 import os
+from datetime import date
 from .base import BaseEventScraper, BASE_DIR
 from .bot_helper import human_delay, human_scroll, human_mouse_move, scroll_to_bottom
+from .date_utils import is_expired
 
 
 class PlatpharmEventScraper(BaseEventScraper):
@@ -209,9 +211,24 @@ class PlatpharmEventScraper(BaseEventScraper):
         print(f"  [Platpharm] 발견된 이벤트 수: {len(results)}")
 
         # ── 2단계: 클릭으로 이벤트 상세 진입 ──
+        today = date.today()
+        stop_detail = False  # 만료 이벤트 발견 시 이후 상세 스크래핑 중단 플래그
+
         # 주의: 봇 탐지와 시간 제약을 위해 최대 5개 정도만 방문
         for i in range(min(5, len(results))):
             try:
+                # ── 목록에서 날짜 확인 → 만료 시 상세 전체 중단 ──
+                if not stop_detail:
+                    duration = results[i].get("duration", "")
+                    if duration:
+                        expired = is_expired(duration, today)
+                        if expired is True:
+                            print(f"  [Platpharm] 만료된 이벤트 감지 ({duration}) → 이후 상세 스크래핑 중단")
+                            stop_detail = True
+
+                if stop_detail:
+                    continue
+
                 # 이벤트 페이지가 상태 초기화 될 수 있으므로, 다시 쿼리
                 title_buttons = await self.page.query_selector_all('button.title-18-medium')
                 if i < len(title_buttons):

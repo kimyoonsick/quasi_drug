@@ -9,8 +9,10 @@
 """
 import os
 import re
+from datetime import date
 from .base import BaseEventScraper, BASE_DIR
 from .bot_helper import human_delay, human_scroll, human_mouse_move, scroll_to_bottom
+from .date_utils import is_expired
 
 
 class SaeropharmEventScraper(BaseEventScraper):
@@ -167,19 +169,29 @@ class SaeropharmEventScraper(BaseEventScraper):
             print(f"    - {m.get('title', '')[:50]} | {m.get('detail_url', '')[:80]}")
 
         results = []
+        today = date.today()
+        stop_detail = False  # 만료 이벤트 발견 시 이후 상세 스크래핑 중단 플래그
 
         # ── 2단계: 각 이벤트 상세 페이지 방문 ──────────────────
         for idx, meta in enumerate(events_meta):
             event_title = meta.get("title", "").strip()
             thumb_url = meta.get("thumb_url", meta.get("img_src", ""))
             detail_url = meta.get("detail_url", "")
+            duration = meta.get("duration", "")
 
             print(f"  [{idx+1}/{len(events_meta)}] {event_title[:50]}")
+
+            # ── 목록에서 날짜 확인 → 만료 시 이후 상세 중단 ──
+            if duration and not stop_detail:
+                expired = is_expired(duration, today)
+                if expired is True:
+                    print(f"    ⏹ 만료된 이벤트 감지 ({duration}) → 이후 상세 스크래핑 중단")
+                    stop_detail = True
 
             event = {
                 "mall_name": "Saeropharm",
                 "event_title": event_title,
-                "duration": meta.get("duration", ""),
+                "duration": duration,
                 "detail_url": detail_url,
                 "thumbnail_url": thumb_url,
                 "benefit_summary": "",
@@ -187,11 +199,15 @@ class SaeropharmEventScraper(BaseEventScraper):
                 "detail_images": "",
             }
 
-            # 썸네일 다운로드
+            # 썸네일 다운로드 (만료여부 무관)
             if thumb_url:
                 await self.download_event_images(event, [thumb_url])
 
-            # 상세 페이지 방문
+            # 상세 페이지 방문 (만료 이벤트 발견 이후엔 스킵)
+            if stop_detail:
+                results.append(event)
+                continue
+
             if detail_url and detail_url.startswith("http") and "javascript:" not in detail_url:
                 try:
                     if idx > 0:

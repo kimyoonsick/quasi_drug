@@ -14,8 +14,10 @@
 """
 import os
 import re
+from datetime import date
 from .base import BaseEventScraper, BASE_DIR
 from .bot_helper import human_delay, human_scroll, human_mouse_move, scroll_to_bottom
+from .date_utils import is_expired
 
 
 class HmpEventScraper(BaseEventScraper):
@@ -108,6 +110,8 @@ class HmpEventScraper(BaseEventScraper):
         print(f"  [HMP] 이벤트 {len(events_meta)}건 감지")
 
         results = []
+        today = date.today()
+        stop_detail = False  # 만료 이벤트 발견 시 이후 상세 스크래핑 중단 플래그
 
         # ── 2단계: 각 이벤트 클릭 → 상세 페이지 방문 ──────────
         for idx, meta in enumerate(events_meta):
@@ -130,6 +134,11 @@ class HmpEventScraper(BaseEventScraper):
             }
 
             try:
+                # stop_detail 상태면 이미지 다운로드만 건너맭고 몔타만 저장
+                if stop_detail:
+                    results.append(event)
+                    continue
+
                 # 이벤트 목록 페이지로 이동 (매번 새로 로드하여 안정성 확보)
                 if idx > 0:
                     await self._delay(5, 10)
@@ -212,6 +221,12 @@ class HmpEventScraper(BaseEventScraper):
                         )
                         if date_match:
                             event["duration"] = f"{date_match.group(1)} ~ {date_match.group(2)}"
+                            # ── 상세에서 날짜를 얻은 후 만료 확인 ──
+                            if not stop_detail:
+                                expired = is_expired(event["duration"], today)
+                                if expired is True:
+                                    print(f"    ⏹ 만료된 이벤트 감지 ({event['duration']}) → 이후 상세 스크래핑 중단")
+                                    stop_detail = True
 
                 else:
                     print(f"    → 링크를 찾을 수 없음, 스킵")

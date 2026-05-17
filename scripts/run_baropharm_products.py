@@ -11,6 +11,10 @@ import asyncio
 import argparse
 from pathlib import Path
 
+# Windows cp949 인코딩 문제 방지
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scrapers.baropharm_product import BaropharmProductScraper
@@ -22,6 +26,8 @@ def parse_args():
                         help="특정 업체 ID만 스크래핑 (디버그용)")
     parser.add_argument("--max-stores", type=int, default=None,
                         help="최대 업체 수 제한")
+    parser.add_argument("--csv", type=str, default=None,
+                        help="업체 리스트 CSV 경로 (미지정 시 기본값)")
     parser.add_argument("--headless", action="store_true",
                         help="headless 모드 실행")
     return parser.parse_args()
@@ -33,6 +39,7 @@ async def main():
         headless=args.headless,
         max_stores=args.max_stores,
         target_store_id=args.store_id,
+        store_csv=args.csv,
     )
     products = await scraper.run()
     print(f"\n최종 수집: {len(products)}개 상품")

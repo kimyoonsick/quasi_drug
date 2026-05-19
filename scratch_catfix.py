@@ -5,7 +5,7 @@ from pathlib import Path
 
 csv_path   = Path(r'data/baropharm/products/2605_baropharm_products.csv')
 backup_path = Path(r'data/baropharm/products/2605_baropharm_products.bak.csv')
-brand_path  = Path(r'data/baropharm/products/2605_baropharm_products_brand.csv')
+brand_path  = Path(r'data/baropharm/products/260516_바로팜_외품업체리스트 - 시트1.csv')
 dict_path   = Path(r'data/baropharm/products/260519_바로팜_상품카테고리사전.json')
 tmp_path    = Path(r'data/baropharm/products/2605_baropharm_products.tmp.csv')
 
@@ -17,7 +17,9 @@ print(f"백업 완료: {backup_path}")
 brand_ids = set()
 with open(brand_path, encoding='utf-8-sig', newline='') as f:
     for row in csv.DictReader(f):
-        brand_ids.add(row['store_id'])
+        url = row.get('URL', '')
+        if '/brand/' in url:
+            brand_ids.add(row['Store_id'])
 print(f"브랜드 store_id {len(brand_ids)}개 로드")
 
 # ── 3. 역방향 조회 테이블: 소분류 -> 카테고리
@@ -105,14 +107,20 @@ with open(csv_path, encoding='utf-8-sig', newline='') as fin, \
         is_brand = row['store_id'] in brand_ids
         old_cat  = row.get('상품카테고리', '').strip()
 
-        # 브랜드 행이고, 현재 카테고리가 재매핑 대상일 때만 업데이트
-        if is_brand and old_cat in TARGET_CATS:
+        # 브랜드관 상품 카테고리 재매핑
+        if is_brand:
             new_cat = resolve_category(row)
-            if new_cat != old_cat:
-                updated_count += 1
-            row['상품카테고리'] = new_cat
-
-            if not new_cat:
+            if new_cat:
+                if new_cat != old_cat:
+                    updated_count += 1
+                    row['상품카테고리'] = new_cat
+            else:
+                # 매핑 안 되는데 기존 값이 찌꺼기(TARGET_CATS)면 비우기
+                if old_cat in TARGET_CATS:
+                    if old_cat != '':
+                        updated_count += 1
+                    row['상품카테고리'] = ''
+                
                 sub = row.get('상품소분류', '').strip()
                 unmapped[sub] = unmapped.get(sub, 0) + 1
 

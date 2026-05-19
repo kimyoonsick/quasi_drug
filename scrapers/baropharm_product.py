@@ -13,16 +13,22 @@ wholesalers 페이지에서 두 섹션의 업체 목록을 수집한 뒤,
 """
 import os
 import re
+import json
 import asyncio
 import random
 import csv
 from datetime import date
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 
-from .bot_helper import (
+BASE_DIR = Path(__file__).resolve().parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.append(str(BASE_DIR))
+
+from scrapers.bot_helper import (
     create_stealth_context,
     human_delay,
     human_scroll,
@@ -31,14 +37,13 @@ from .bot_helper import (
     block_analytics_only,
     handle_bot_challenge,
 )
-
-BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 WHOLESALERS_URL = "https://www.baropharm.com/wholesalers#wholesalers"
 LOGIN_URL = "https://community.baropharm.com/signin?from=https://www.baropharm.com/"
 STORE_URL_TMPL = "https://www.baropharm.com/quasi-drug-mall/{store_id}"
 STORE_LIST_CSV = BASE_DIR / "data" / "baropharm" / "products" / "260516_바로팜_외품업체리스트 - 시트1.csv"
+CATEGORY_DICT_JSON = BASE_DIR / "data" / "baropharm" / "products" / "260519_바로팜_상품카테고리사전.json"
 
 
 class BaropharmProductScraper:
@@ -48,11 +53,13 @@ class BaropharmProductScraper:
 
     def __init__(self, headless: bool = False, max_stores: int | None = None,
                  target_store_id: str | None = None,
-                 store_csv: str | Path | None = None):
+                 store_csv: str | Path | None = None,
+                 url_type: str | None = None):
         self.headless = headless
         self.max_stores = max_stores
         self.target_store_id = target_store_id
         self.store_csv = Path(store_csv) if store_csv else STORE_LIST_CSV
+        self.url_type = url_type  # 'brand' | 'mall' | None(전체)
         self.username = os.getenv("baro_id") or os.getenv("email_id")
         self.password = os.getenv("baro_pw") or os.getenv("pw")
         self.browser = None
@@ -60,6 +67,56 @@ class BaropharmProductScraper:
         self.page = None
         self._pw = None
         self.all_products: list[dict] = []
+        # 브랜드관 상품소분류 → 상품카테고리 매핑 사전
+        self._category_dict: dict[str, str] = {}
+        if CATEGORY_DICT_JSON.exists():
+            with CATEGORY_DICT_JSON.open(encoding="utf-8") as _f:
+                raw_dict = json.load(_f)
+                for cat, subs in raw_dict.items():
+                    for sub in subs:
+                        self._category_dict[sub] = cat
+            print(f"  [카테고리사전] {len(self._category_dict)}개 항목 로드")
+
+    def resolve_category(self, row: dict) -> str:
+        """상품소분류 기반으로 상품카테고리 결정"""
+        sub  = row.get('상품소분류', '').strip()
+        name = row.get('상품명', '').strip()
+        cat1 = row.get('카테고리1', '').strip()
+        
+        # 1) 사전 직접 매핑 (소분류 → 카테고리)
+        if sub in self._category_dict:
+            return self._category_dict[sub]
+            
+        # 2) 브랜드관 / 전체 → 카테고리1 값
+        if sub in ('브랜드관', '전체'):
+            return cat1 if cat1 else ''
+            
+        # 3) KPAI 예외 (건기식 및 일반의약품 중 특정 상품명 → 교양서적)
+        KPAI_EXCEPTIONS = {'[KPAI] 맞춤 OTC 선택가이드', '[KPAI]KPAI 톡톡 일반약 실전 노하우'}
+        if sub == '건기식 및 일반의약품' and name in KPAI_EXCEPTIONS:
+            return '교양서적'
+            
+        # 4) 기타 추가 매핑
+        EXTRA_MAP = {
+            '건강관리':           '건강식품',
+            '건기식 및 일반의약품': '일반의약품',
+            '교양서적':           '의약외상품',
+            '분쇄기':             '약국용품',
+            '뷰티':               '화장품',
+            '약국용품':           '약국용품',
+            '의료용품':           '의약외상품',
+            '캠핑':               '스포츠/레저',
+            '코스메슈티컬':       '화장품',
+            '홍보용품':           '약국용품',
+        }
+        if sub in EXTRA_MAP:
+            return EXTRA_MAP[sub]
+            
+        # 5) 소분류가 비어있으면 카테고리1을 fallback으로 사용
+        if not sub and cat1:
+            return cat1
+            
+        return ''
 
     # ── 브라우저 ──────────────────────────────────────────────
 
@@ -570,9 +627,10 @@ class BaropharmProductScraper:
                         "카테고리2": store.get("카테고리2", ""),
                         "업체명": name,
                         "store_id": sid,
-                        "상품카테고리": cat_name,
+                        "상품소분류": cat_name,
                         "수집일": date.today().isoformat(),
                     })
+                    item["상품카테고리"] = self.resolve_category(item)
                 products.extend(items)
                 print(f"      → 수집: {len(items)}개 (예상: {expected})")
 
@@ -635,15 +693,17 @@ class BaropharmProductScraper:
                         items = await self._extract_mall_products()
 
                         for item in items:
+                            minor = minor_name if minor_name != "전체" else ""
                             item.update({
                                 "카테고리1": store.get("카테고리1", ""),
                                 "카테고리2": store.get("카테고리2", ""),
                                 "업체명": name,
                                 "store_id": sid,
-                                "상품카테고리": major_name,
-                                "상품소분류": minor_name if minor_name != "전체" else "",
+                                "상품소분류": minor,
                                 "수집일": date.today().isoformat(),
                             })
+                            resolved = self.resolve_category(item)
+                            item["상품카테고리"] = resolved if resolved else major_name
                         products.extend(items)
                         print(f"        → 수집: {len(items)}개 (예상: {expected})")
 
@@ -782,7 +842,7 @@ class BaropharmProductScraper:
                 break
 
             if (i + 1) % 10 == 0:
-                print(f"        더보기 {i+1}회 — {current}/{expected}")
+                print(f"        더보기 {i+1}회 - {current}/{expected}")
 
             await asyncio.sleep(random.uniform(1.0, 2.0))
 
@@ -881,6 +941,7 @@ class BaropharmProductScraper:
                         '할인율': discountRate,
                         '가격': price,
                         '할인전가격': originalPrice,
+                        '포인트백': '',
                         '품절여부': isSoldOut,
                     });
                 }
@@ -992,12 +1053,12 @@ class BaropharmProductScraper:
                 }).length;
             }""")
             if expected > 0 and current >= expected:
-                print(f"      스크롤 {i+1}회 — {current}/{expected} 로드 완료")
+                print(f"      스크롤 {i+1}회 - {current}/{expected} 로드 완료")
                 break
             if current == prev_count:
                 stable += 1
                 if stable >= 5:
-                    print(f"      스크롤 {i+1}회 — 변화 없음 5회 연속, 중단 ({current}/{expected})")
+                    print(f"      스크롤 {i+1}회 - 변화 없음 5회 연속, 중단 ({current}/{expected})")
                     break
             else:
                 stable = 0
@@ -1007,83 +1068,187 @@ class BaropharmProductScraper:
             await asyncio.sleep(random.uniform(1.5, 2.5))
 
     async def _extract_products(self) -> list[dict]:
-        """상품 카드에서 상품명, 규격, 가격 추출
+        """상품 카드에서 상품명, 규격, 단위수량, 단위, 할인율, 가격, 할인전가격, 포인트백 추출
 
-        DOM 구조 (바로팜 업체 전용관):
+        DOM 구조 (바로팜 brand 업체 전용관):
           div.brand-prod-list > ul > li (상품 카드)
-            카드 내 p 태그들:
-              p: 상품명
-              p: 규격
-              p: 가격 (숫자 + '원')
-              또는 '품절'
+            div.product-txt-box
+              p                       → 상품명
+              dl > dd                 → 규격 + 단위수량 + 단위 (공백 구분)
+              div > strong            → 할인율 (예: 58%)
+              div > p.price-txt       → 할인후 가격 (예: 7,500원)
+              div > p.normal-price-txt→ 할인전 가격 (예: 18,000원)
+              div.pointback-section p → 포인트백 (예: 5% 적립)
         """
         return await self.page.evaluate(r"""() => {
             const results = [];
             const seen = new Set();
-            const SKIP_TEXTS = new Set([
-                '전체','일반의약품','전문의약품','의약외상품','건강식품',
-                '의료기기','약국용품','동물의약용품','화장품','생활용품',
-                '식품','스포츠/레저','도서','패션잡화','출산/유아동','가전/가구',
-                '추천순','신상품순','낮은가격순','높은가격순','장바구니','구매',
-                '쿠폰','품절','원','개 상품',
-            ]);
+
+            // 단위 키워드 목록 (dd 텍스트에서 단위를 식별하기 위함)
+            const UNIT_KEYWORDS = [
+                'EA','ea','Ea','개','매','정','캡슐','포','입','팩','BOX','box','Box',
+                'SET','set','Set','세트','병','통','봉','장','매입','g','kg','ml','mL',
+                'L','mg','cc','시트','롤','켤레','쌍','갑','타','조각','피스',
+            ];
+
+            function parseDD(ddText) {
+                // dd 텍스트에서 규격, 단위수량, 단위를 분리
+                // 예시: "선물세트 80ml 10 EA" → 규격="선물세트 80ml", 단위수량="10", 단위="EA"
+                // 예시: "100ml x 30포" → 규격="100ml", 단위수량="30", 단위="포"
+                // 예시: "사계절 사용 가능합니다." → 규격="사계절 사용 가능합니다.", 단위수량="", 단위=""
+                if (!ddText || ddText.trim().length === 0) return { spec: '', unitQty: '', unit: '' };
+
+                const text = ddText.trim();
+
+                // x 또는 X 로 구분된 패턴 시도: "100ml x 30포" or "100ml X 30포"
+                const xPattern = text.match(/^(.+?)\s*[xX×]\s*(\d[\d,]*)\s*([가-힣A-Za-z]+)$/);
+                if (xPattern) {
+                    return { spec: xPattern[1].trim(), unitQty: xPattern[2], unit: xPattern[3] };
+                }
+
+                // 뒤에서부터 단위 키워드 탐색
+                const tokens = text.split(/\s+/);
+                if (tokens.length >= 2) {
+                    const lastToken = tokens[tokens.length - 1];
+                    // 마지막 토큰이 단위 키워드인지 확인
+                    const isUnit = UNIT_KEYWORDS.some(u => lastToken === u || lastToken.endsWith(u));
+                    if (isUnit) {
+                        // 마지막에서 두 번째 토큰이 숫자인지 확인 (단위수량)
+                        const secondLast = tokens[tokens.length - 2];
+                        if (/^\d[\d,]*$/.test(secondLast)) {
+                            // 규격 = 나머지 토큰
+                            const specTokens = tokens.slice(0, tokens.length - 2);
+                            return {
+                                spec: specTokens.join(' '),
+                                unitQty: secondLast.replace(/,/g, ''),
+                                unit: lastToken
+                            };
+                        }
+                        // 마지막 토큰이 "30포" 같이 숫자+단위 결합형
+                        const combined = lastToken.match(/^(\d[\d,]*)([가-힣A-Za-z]+)$/);
+                        if (combined) {
+                            const specTokens = tokens.slice(0, tokens.length - 1);
+                            return {
+                                spec: specTokens.join(' '),
+                                unitQty: combined[1].replace(/,/g, ''),
+                                unit: combined[2]
+                            };
+                        }
+                        // 단위만 있고 수량 없음
+                        const specTokens = tokens.slice(0, tokens.length - 1);
+                        return { spec: specTokens.join(' '), unitQty: '', unit: lastToken };
+                    }
+                    // 마지막 토큰이 "30포" 같은 숫자+단위 결합형
+                    const combined = lastToken.match(/^(\d[\d,]*)([가-힣A-Za-z]+)$/);
+                    if (combined && UNIT_KEYWORDS.some(u => combined[2] === u || combined[2].endsWith(u))) {
+                        const specTokens = tokens.slice(0, tokens.length - 1);
+                        return {
+                            spec: specTokens.join(' '),
+                            unitQty: combined[1].replace(/,/g, ''),
+                            unit: combined[2]
+                        };
+                    }
+                }
+                // 파싱 실패 시 전체를 규격으로 반환
+                return { spec: text, unitQty: '', unit: '' };
+            }
 
             // brand-prod-list > ul > li 기반 탐색
             const prodList = document.querySelector('.brand-prod-list ul');
             if (prodList) {
                 const cards = Array.from(prodList.querySelectorAll(':scope > li'));
                 for (const card of cards) {
-                    // li 전체 텍스트에서 품절 여부 확인
+                    const txtBox = card.querySelector('.product-txt-box');
+                    if (!txtBox) continue;
+
+                    // 상품명: dl > dt > p.title (또는 폴백으로 product-txt-box 내 첫 p)
+                    const nameP = txtBox.querySelector('dl dt p.title')
+                        || txtBox.querySelector('dl dt p')
+                        || txtBox.querySelector(':scope > p');
+                    const productName = nameP ? nameP.textContent.trim() : '';
+                    if (!productName) continue;
+
+                    // 규격/단위수량/단위: dl > dd
+                    const dd = txtBox.querySelector('dl dd');
+                    const ddText = dd ? dd.textContent.trim() : '';
+                    const parsed = parseDD(ddText);
+
+                    // 품절 체크
                     const fullText = card.textContent || '';
-                    let isSoldOut = fullText.includes('품절');
-
-                    // p 태그 텍스트 수집
-                    const pTexts = Array.from(card.querySelectorAll('p'))
-                        .map(p => p.textContent.trim())
-                        .filter(t => t.length > 0);
-
-                    let productName = '';
-                    let spec = '';
-                    let price = 0;
-
-                    for (const t of pTexts) {
-                        if (t === '품절') continue;
-                        const priceMatch = t.match(/^([\d,]+)\s*원?$/);
-                        if (priceMatch) {
-                            price = parseInt(priceMatch[1].replace(/,/g, ''));
-                            continue;
-                        }
-                        if (SKIP_TEXTS.has(t)) continue;
-                        if (!productName && t.length > 1 && t.length < 200) {
-                            productName = t;
-                        } else if (productName && !spec && t.length > 0 && t.length < 100) {
-                            spec = t;
-                        }
+                    let isSoldOut = false;
+                    const soldOutEl = txtBox.querySelector('strong');
+                    if (soldOutEl && soldOutEl.textContent.trim() === '품절') {
+                        isSoldOut = true;
+                    } else if (fullText.includes('품절')) {
+                        isSoldOut = true;
                     }
 
-                    // p 태그에서 가격 못 찾은 경우, 전체 텍스트에서 시도
-                    if (price === 0 && !isSoldOut) {
-                        const m = fullText.match(/([\d,]+)\s*원/);
+                    // 할인율: div > strong (품절이 아닌 경우)
+                    let discountRate = '';
+                    const strongEl = txtBox.querySelector('div > strong');
+                    if (strongEl) {
+                        const st = strongEl.textContent.trim();
+                        const drMatch = st.match(/(\d+)\s*%/);
+                        if (drMatch) discountRate = drMatch[1] + '%';
+                    }
+
+                    // 가격: p.price-txt
+                    let price = 0;
+                    const priceTxt = txtBox.querySelector('.price-txt');
+                    if (priceTxt) {
+                        const m = priceTxt.textContent.match(/([\d,]+)/);
                         if (m) price = parseInt(m[1].replace(/,/g, ''));
                     }
 
-                    if (!productName) continue;
+                    // 할인전가격: p.normal-price-txt
+                    let originalPrice = 0;
+                    const normalTxt = txtBox.querySelector('.normal-price-txt');
+                    if (normalTxt) {
+                        const m = normalTxt.textContent.match(/([\d,]+)/);
+                        if (m) originalPrice = parseInt(m[1].replace(/,/g, ''));
+                    }
 
-                    const key = `${productName}||${spec}||${price}`;
+                    // 가격 폴백: price-txt 없이 p 태그에서 가격 패턴 탐색
+                    if (price === 0 && !isSoldOut) {
+                        const allP = txtBox.querySelectorAll('p');
+                        for (const p of allP) {
+                            if (p === nameP) continue;
+                            const m = p.textContent.match(/([\d,]+)\s*원/);
+                            if (m) {
+                                price = parseInt(m[1].replace(/,/g, ''));
+                                break;
+                            }
+                        }
+                    }
+
+                    // 포인트백: .pointback-section p
+                    let pointback = '';
+                    const pbP = txtBox.querySelector('.pointback-section p');
+                    if (pbP) {
+                        const pbMatch = pbP.textContent.match(/(\d+%)/);
+                        if (pbMatch) pointback = pbMatch[1];
+                    }
+
+                    const key = `${productName}||${parsed.spec}||${price}`;
                     if (seen.has(key)) continue;
                     seen.add(key);
 
                     results.push({
-                        상품명: productName,
-                        규격: spec,
-                        가격: price,
-                        품절여부: isSoldOut,
+                        '상품명': productName,
+                        '규격': parsed.spec,
+                        '단위수량': parsed.unitQty,
+                        '단위': parsed.unit,
+                        '할인율': discountRate,
+                        '가격': price,
+                        '할인전가격': originalPrice,
+                        '포인트백': pointback,
+                        '품절여부': isSoldOut,
                     });
                 }
                 return results;
             }
 
-            // 폴백: p 태그 기반 탐색
+            // 폴백: p 태그 기반 탐색 (brand-prod-list가 없는 경우)
             const pricePTags = Array.from(document.querySelectorAll('p')).filter(p => {
                 const t = p.textContent.trim();
                 return /^[\d,]+$/.test(t) || t === '품절';
@@ -1115,7 +1280,6 @@ class BaropharmProductScraper:
                         price = parseInt(priceMatch[1].replace(/,/g, ''));
                         continue;
                     }
-                    if (SKIP_TEXTS.has(t)) continue;
                     if (!productName && t.length > 1 && t.length < 200) {
                         productName = t;
                     } else if (productName && !spec && t.length > 0 && t.length < 100) {
@@ -1131,10 +1295,10 @@ class BaropharmProductScraper:
                 seen.add(key);
 
                 results.push({
-                    상품명: productName,
-                    규격: spec,
-                    가격: price,
-                    품절여부: isSoldOut,
+                    '상품명': productName,
+                    '규격': spec,
+                    '가격': price,
+                    '품절여부': isSoldOut,
                 });
             }
             return results;
@@ -1147,14 +1311,27 @@ class BaropharmProductScraper:
         out_dir.mkdir(parents=True, exist_ok=True)
         if filename is None:
             ym = date.today().strftime("%y%m")
-            filename = f"{ym}_baropharm_products.csv"
+            suffix = f"_{self.url_type}" if self.url_type else ""
+            filename = f"{ym}_baropharm_products{suffix}.csv"
         out_path = out_dir / filename
         fieldnames = [
             "카테고리1", "카테고리2", "업체명", "store_id",
             "상품카테고리", "상품소분류", "상품명", "규격", "단위수량", "단위",
-            "할인율", "가격", "할인전가격", "품절여부", "수집일",
+            "할인율", "가격", "할인전가격", "포인트백", "품절여부", "수집일",
         ]
-        mode = "a" if out_path.exists() else "w"
+        if out_path.exists():
+            # 기존 파일 헤더와 현재 fieldnames 일치 여부 확인
+            with out_path.open(encoding="utf-8-sig") as _f:
+                existing_header = _f.readline().rstrip("\n").rstrip("\r").split(",")
+            if existing_header != fieldnames:
+                print(f"  [경고] 헤더 불일치 - 기존: {existing_header}")
+                print(f"          현재  : {fieldnames}")
+                print(f"          -> 파일을 새로 생성합니다 (기존 데이터 보존 불가)")
+                mode = "w"
+            else:
+                mode = "a"
+        else:
+            mode = "w"
         with out_path.open(mode, newline="", encoding="utf-8-sig") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
             if mode == "w":
@@ -1183,6 +1360,13 @@ class BaropharmProductScraper:
                     continue
                 url_base = (row.get("URL") or "").strip().rstrip("/")
                 url = f"{url_base}/{sid}"
+
+                # url_type 필터 ('brand' | 'mall' | None=전체)
+                if self.url_type == "brand" and "/brand/" not in url:
+                    continue
+                if self.url_type == "mall" and "/quasi-drug-mall/" not in url:
+                    continue
+
                 stores.append({
                     "store_id": sid,
                     "업체명": (row.get("업체명") or "").strip(),
@@ -1190,7 +1374,9 @@ class BaropharmProductScraper:
                     "카테고리1": (row.get("카테고리1") or "").strip(),
                     "카테고리2": (row.get("카테고리2") or "").strip(),
                 })
-        print(f"  [CSV] {csv_path.name}에서 {len(stores)}개 업체 로드")
+
+        type_label = {"brand": "brand 전용관", "mall": "quasi-drug-mall"}.get(self.url_type, "전체")
+        print(f"  [CSV] {csv_path.name}에서 {len(stores)}개 업체 로드 ({type_label})")
         return stores
 
     async def run(self) -> list[dict]:
@@ -1263,3 +1449,14 @@ class BaropharmProductScraper:
 
         finally:
             await self.stop_browser()
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="바로팜 상품 스크래퍼")
+    parser.add_argument("--type", choices=["brand", "mall"], help="스크래핑할 URL 타입 (brand 또는 mall). 생략 시 전체.")
+    parser.add_argument("--headless", action="store_true", help="브라우저 창 숨기기")
+    parser.add_argument("--max-stores", type=int, default=None, help="최대 수집 업체 수 제한 (테스트용)")
+    args = parser.parse_args()
+
+    scraper = BaropharmProductScraper(url_type=args.type, headless=args.headless, max_stores=args.max_stores)
+    asyncio.run(scraper.run())

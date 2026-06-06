@@ -215,25 +215,18 @@ class BaropharmEventScraper(BaseEventScraper):
 
         # 상세 페이지 접근 - 모든 이벤트 방문
         today = date.today()
-        stop_detail = False  # 만료 이벤트 발견 시 이후 상세 스크래핑 중단 플래그
-
-        # 목록에서 얻은 duration으로 1차 만료 여부 선돈 확인
-        for i, res in enumerate(results):
-            dur = res.get("duration", "")
-            if dur:
-                expired = is_expired(dur, today)
-                if expired is True:
-                    print(f"  [Baropharm] 만료 이벤트 감지 ({dur}) → 이름: {res['event_title'][:30]}")
-                    stop_detail = True
-                    break
 
         for i, ev in enumerate(events_data):
             detail_url = ev.get("detail_url", "")
             if detail_url and detail_url.startswith("http"):
                 try:
-                    if stop_detail:
-                        print(f"  [{i+1}/{len(events_data)}] 상세 스크래핑 중단 (만료 이벤트 이후) 스킵")
-                        continue
+                    # 개별 이벤트의 만료 여부 확인
+                    dur = results[i].get("duration", "")
+                    if dur:
+                        expired = is_expired(dur, today)
+                        if expired is True:
+                            print(f"  [{i+1}/{len(events_data)}] 만료 이벤트 상세 스크래핑 스킵 ({dur}) → 이름: {results[i]['event_title'][:30]}")
+                            continue
 
                     await self._delay(5, 10)
                     await human_mouse_move(self.page)
